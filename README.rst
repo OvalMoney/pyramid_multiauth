@@ -1,6 +1,6 @@
-=================
-pyramid_multiauth
-=================
+==================
+pyramid_selectauth
+==================
 
 |pypi| |travis|
 

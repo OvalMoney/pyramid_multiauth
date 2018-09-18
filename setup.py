@@ -13,9 +13,9 @@ with open(os.path.join(here, 'CHANGES.txt')) as f:
 
 requires = ['pyramid']
 
-setup(name='pyramid_multiauth',
-      version='0.9.0',
-      description='pyramid_multiauth',
+setup(name='pyramid_selectauth',
+      version='0.0.1',
+      description='pyramid_selectauth',
       long_description=README + '\n\n' + CHANGES,
       classifiers=[
           "Programming Language :: Python",
@@ -23,14 +23,14 @@ setup(name='pyramid_multiauth',
           "Topic :: Internet :: WWW/HTTP",
           "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
       ],
-      author='Mozilla Services',
-      author_email='services-dev@mozilla.org',
-      url='https://github.com/mozilla-services/pyramid_multiauth',
+      author='Walter Danilo Galante',
+      author_email='walter.galante@ovalmoney.com',
+      url='https://github.com/OvalMoney/pyramid_selectauth',
       keywords='web pyramid pylons authentication',
       packages=find_packages(),
       include_package_data=True,
       zip_safe=False,
       install_requires=requires,
       tests_require=requires,
-      test_suite="pyramid_multiauth",
+      test_suite="pyramid_selectauth",
       paster_plugins=['pyramid'])
