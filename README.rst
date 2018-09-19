@@ -4,31 +4,33 @@ pyramid_selectauth
 
 |pypi| |travis|
 
-.. |pypi| image:: https://img.shields.io/pypi/v/pyramid_multiauth.svg
-    :target: https://pypi.python.org/pypi/pyramid_multiauth
+.. |pypi| image:: https://img.shields.io/pypi/v/pyramid_selectauth.svg
+    :target: https://pypi.python.org/pypi/pyramid_selectauth
 
-.. |travis| image:: https://travis-ci.org/mozilla-services/pyramid_multiauth.svg?branch=master
-    :target: https://travis-ci.org/mozilla-services/pyramid_multiauth
+.. |travis| image:: https://travis-ci.org/mozilla-services/pyramid_selectauth.svg?branch=master
+    :target: https://travis-ci.org/mozilla-services/pyramid_selectauth
 
 
-An authentication policy for Pyramid that proxies to a stack of other
-authentication policies.
+An authentication policy for Pyramid that automagically selects the
+correct policy to use for a specific request, given a list of authentication policies
 
 
 Overview
 ========
 
-MultiAuthenticationPolicy is a Pyramid authentication policy that proxies to
-a stack of *other* IAuthenticationPolicy objects, to provide a combined auth
-solution from individual pieces.  Simply pass it a list of policies that
-should be tried in order::
+SelectableAuthenticationPolicy is a Pyramid authentication policy that selects
+*another* provided IAuthenticationPolicy object, to provide a different auth policy
+based on the specific request.  Simply pass it a list of policies that
+should be tried in order, and register the 'selected_policy' request method that
+will select and cache the correct policy to use::
 
 
     policies = [
         IPAuthenticationPolicy("127.0.*.*", principals=["local"])
         IPAuthenticationPolicy("192.168.*.*", principals=["trusted"])
     ]
-    authn_policy = MultiAuthenticationPolicy(policies)
+    authn_policy = SelectableAuthenticationPolicy(policies)
+    config.add_request_method('selected_policy', authn_policy.select_policy, reify=True)
     config.set_authentication_policy(authn_policy)
 
 This example uses the pyramid_ipauth module to assign effective principals
@@ -37,14 +39,8 @@ policies so that requests originating from "127.0.*.*" will have principal
 "local" while requests originating from "192.168.*.*" will have principal
 "trusted".
 
-In general, the results from the stacked authentication policies are combined
-as follows:
-
-    * authenticated_userid:    return userid from first successful policy
-    * unauthenticated_userid:  return userid from first successful policy
-    * effective_principals:    return union of principals from all policies
-    * remember:                return headers from all policies
-    * forget:                  return headers from all policies
+The default selection function will call *unauthenticated_userid* on the provided
+policies in order, and select the first one that does not return `None`.
 
 
 Deployment Settings
@@ -56,22 +52,22 @@ paste deployment settings.  Consider the following example::
     [app:pyramidapp]
     use = egg:mypyramidapp
 
-    multiauth.policies = ipauth1 ipauth2 pyramid_browserid
+    selectauth.policies = ipauth1 ipauth2 pyramid_browserid
 
-    multiauth.policy.ipauth1.use = pyramid_ipauth.IPAuthentictionPolicy
-    multiauth.policy.ipauth1.ipaddrs = 127.0.*.*
-    multiauth.policy.ipauth1.principals = local
+    selectauth.policy.ipauth1.use = pyramid_ipauth.IPAuthentictionPolicy
+    selectauth.policy.ipauth1.ipaddrs = 127.0.*.*
+    selectauth.policy.ipauth1.principals = local
 
-    multiauth.policy.ipauth2.use = pyramid_ipauth.IPAuthentictionPolicy
-    multiauth.policy.ipauth2.ipaddrs = 192.168.*.*
-    multiauth.policy.ipauth2.principals = trusted
+    selectauth.policy.ipauth2.use = pyramid_ipauth.IPAuthentictionPolicy
+    selectauth.policy.ipauth2.ipaddrs = 192.168.*.*
+    selectauth.policy.ipauth2.principals = trusted
 
 To configure authentication from these settings, simply include the multiauth
 module into your configurator::
 
-    config.include("pyramid_multiauth")
+    config.include("pyramid_selectauth")
 
-In this example you would get a MultiAuthenticationPolicy with three stacked
+In this example you would get a SelectableAuthenticationPolicy with three stacked
 auth policies.  The first two, ipauth1 and ipauth2, are defined as the name of
 of a callable along with a set of keyword arguments.  The third is defined as
 the name of a module, pyramid_browserid, which will be procecesed via the
@@ -87,27 +83,6 @@ also be specified from configuration::
     [app:pyramidapp]
     use = egg:mypyramidapp
 
-    multiauth.authorization_policy = mypyramidapp.acl.Custom
-    multiauth.groupfinder  = mypyramidapp.acl.groupfinder
+    selectauth.authorization_policy = mypyramidapp.acl.Custom
 
     ...
-
-
-MultiAuthPolicySelected Event
-=============================
-
-An event is triggered when one of the multiple policies configured is selected.
-
-::
-
-    from pyramid_multiauth import MultiAuthPolicySelected
-
-
-    # Track policy used, for prefixing user_id and for logging.
-    def on_policy_selected(event):
-        print("%s (%s) authenticated %s for request %s" % (event.policy_name,
-                                                           event.policy,
-                                                           event.userid,
-                                                           event.request))
-
-    config.add_subscriber(on_policy_selected, MultiAuthPolicySelected)
