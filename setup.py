@@ -12,7 +12,7 @@ with open(os.path.join(here, 'CHANGES.txt')) as f:
 requires = ['pyramid']
 
 setup(name='pyramid_selectauth',
-      version='0.0.1',
+      version='0.0.2',
       description='pyramid_selectauth',
       long_description=README + '\n\n' + CHANGES,
       classifiers=[
@@ -25,7 +25,7 @@ setup(name='pyramid_selectauth',
       author_email='walter.galante@ovalmoney.com',
       url='https://github.com/OvalMoney/pyramid_selectauth',
       keywords='web pyramid pylons authentication',
-      packages=find_packages(include=['python_selectauth']),
+      packages=find_packages(include=['pyramid_selectauth']),
       include_package_data=True,
       zip_safe=False,
       install_requires=requires,
