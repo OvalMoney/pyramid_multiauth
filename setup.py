@@ -1,6 +1,4 @@
-
 import os
-import sys
 from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -27,7 +25,7 @@ setup(name='pyramid_selectauth',
       author_email='walter.galante@ovalmoney.com',
       url='https://github.com/OvalMoney/pyramid_selectauth',
       keywords='web pyramid pylons authentication',
-      packages=find_packages(),
+      packages=find_packages(include=['python_selectauth']),
       include_package_data=True,
       zip_safe=False,
       install_requires=requires,

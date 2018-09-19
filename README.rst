@@ -7,8 +7,8 @@ pyramid_selectauth
 .. |pypi| image:: https://img.shields.io/pypi/v/pyramid_selectauth.svg
     :target: https://pypi.python.org/pypi/pyramid_selectauth
 
-.. |travis| image:: https://travis-ci.org/mozilla-services/pyramid_selectauth.svg?branch=master
-    :target: https://travis-ci.org/mozilla-services/pyramid_selectauth
+.. |travis| image:: https://travis-ci.org/OvalMoney/pyramid_selectauth.svg?branch=master
+    :target: https://travis-ci.org/OvalMoney/pyramid_selectauth
 
 
 An authentication policy for Pyramid that automagically selects the
