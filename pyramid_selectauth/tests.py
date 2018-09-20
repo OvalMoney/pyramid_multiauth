@@ -7,12 +7,16 @@ from zope.interface import implementer
 
 import pyramid.authorization
 import pyramid.testing
+
+from pyramid.authorization import ACLAuthorizationPolicy
 from pyramid.testing import DummyRequest
 from pyramid.security import Everyone, Authenticated
-from pyramid.exceptions import Forbidden
+from pyramid.exceptions import Forbidden, ConfigurationError
 from pyramid.interfaces import IAuthenticationPolicy, IAuthorizationPolicy
 
-from pyramid_selectauth import SelectableAuthenticationPolicy
+from pyramid_selectauth import (SelectableAuthenticationPolicy,
+                                create_selectable_authentication_policy,
+                                set_selectable_authentication_policy)
 
 
 #  Here begins various helper classes and functions for the tests.
@@ -112,32 +116,15 @@ class TestAuthzPolicyCustom(object):
         raise NotImplementedError()  # pragma: nocover
 
 
-def testincludeme1(config):
-    """Config include that sets up a TestAuthnPolicy1 and a forbidden view."""
-    config.set_authentication_policy(TestAuthnPolicy1())
-
-    def forbidden_view(request):
-        return "FORBIDDEN ONE"
-
-    config.add_view(forbidden_view,
-                    renderer="json",
-                    context="pyramid.exceptions.Forbidden")
+@implementer(IAuthenticationPolicy)
+class CustomPolicy(SelectableAuthenticationPolicy):
+    def select_policy(self, request):
+        return self._policies[0]
 
 
-def testincludeme2(config):
-    """Config include that sets up a TestAuthnPolicy2."""
-    config.set_authentication_policy(TestAuthnPolicy2())
-
-
-def testincludemenull(config):
+def policy_factory(config):
     """Config include that doesn't do anything."""
-    pass
-
-
-def testincludeme3(config):
-    """Config include that adds a TestAuthPolicy3 and commits it."""
-    config.set_authentication_policy(TestAuthnPolicy3())
-    config.commit()
+    return TestAuthnPolicy3()
 
 
 def raiseforbidden(request):
@@ -159,110 +146,174 @@ class SelectAuthPolicyTests(unittest.TestCase):
         pyramid.testing.tearDown()
 
     def test_basic_select(self):
-
         policies = [TestAuthnPolicy1(), TestAuthnPolicy2()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(policy.authenticated_userid(self.request), "test1")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test1"])
 
-        self.assertEquals(policy.authenticated_userid(self.request),
-                          "test1")
-        self.assertEquals(sorted(policy.effective_principals(self.request)),
-                          [Authenticated, Everyone, "test1"])
-
-    def test_policy_selected_event(self):
-
+    def test_selected_policy_not_cached_with_dummyrequest(self):
         policies = [TestAuthnPolicy2(), TestAuthnPolicy3()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-
-        self.assertEquals(policy.authenticated_userid(self.request), "test2")
-
-    def test_selected_policy_cached(self):
-        policies = [TestAuthnPolicy2(), TestAuthnPolicy3()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-
-        self.assertEquals(policy.unauthenticated_userid(self.request), "test2")
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(policy.unauthenticated_userid(self.request), "test2")
         policies.reverse()
-        self.assertEquals(policy.unauthenticated_userid(self.request), "test2")
+        self.assertEqual(policy.unauthenticated_userid(self.request), "test3")
 
-    def test_stacking_of_authenticated_userid(self):
+    def test_selected_policy_cached_with_real_request(self):
         policies = [TestAuthnPolicy2(), TestAuthnPolicy3()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-
-        self.assertEquals(policy.authenticated_userid(self.request), "test2")
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.request.set_property(policy.select_policy, 'sa_selected_policy',
+                                  reify=True)
+        self.assertEqual(policy.unauthenticated_userid(self.request), "test2")
         policies.reverse()
-        self.assertEquals(policy.authenticated_userid(self.request), "test2")
+        self.assertEqual(policy.unauthenticated_userid(self.request), "test2")
 
-    def test_stacking_of_effective_principals(self):
+    def test_selecting_of_authenticated_userid(self):
+        policies = [TestAuthnPolicy2(), TestAuthnPolicy3()]
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(policy.authenticated_userid(self.request), "test2")
+
+    def test_selecting_of_effective_principals(self):
         policies = [TestAuthnPolicy3(), TestAuthnPolicy2()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-
-        self.assertEquals(sorted(policy.effective_principals(self.request)),
-                          [Authenticated, Everyone, "test3", "test4"])
-        policies.reverse()
-        self.assertEquals(sorted(policy.effective_principals(self.request)),
-                          [Authenticated, Everyone, "test3", "test4"])
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
         policies.append(TestAuthnPolicy1())
-        self.assertEquals(sorted(policy.effective_principals(self.request)),
-                          [Authenticated, Everyone, "test3", "test4"])
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
 
-    def test_stacking_of_remember_and_forget(self):
+    def test_select_of_remember_and_forget(self):
         policies = [TestAuthnPolicy1(), TestAuthnPolicy2(), TestAuthnPolicy3()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(policy.remember(self.request, "ha"),
+                         [("X-Remember", "ha")])
+        self.assertEqual(policy.forget(self.request),
+                         [("X-Forget", "foo")])
 
-        self.assertEquals(policy.remember(self.request, "ha"),
-                          [("X-Remember", "ha")])
-        self.assertEquals(policy.forget(self.request),
-                          [("X-Forget", "foo")])
-        policies.reverse()
-        self.assertEquals(policy.remember(self.request, "ha"),
-                          [("X-Remember", "ha")])
-        self.assertEquals(policy.forget(self.request),
-                          [("X-Forget", "foo")])
-
-    def test_includeme_uses_acl_authorization_by_default(self):
-        self.config.include("pyramid_selectauth")
+    def test_directive(self):
+        policy = create_selectable_authentication_policy(self.config)
+        self.config.add_selectauth_policy(TestAuthnPolicy1())
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.set_authentication_policy(policy)
         self.config.commit()
-        policy = self.config.registry.getUtility(IAuthorizationPolicy)
-        expected = pyramid.authorization.ACLAuthorizationPolicy
-        self.assertTrue(isinstance(policy, expected))
 
-    def test_includeme_reads_authorization_from_settings(self):
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, SelectableAuthenticationPolicy))
+        self.assertEqual(len(policy._policies), 1)
+        self.assertEqual(policy.authenticated_userid(self.request),
+                         "test1")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test1"])
+
+    def test_directive_on_includeme(self):
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.add_selectauth_policy(TestAuthnPolicy1())
+        self.config.add_selectauth_policy(TestAuthnPolicy2())
+        self.config.commit()
+
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, SelectableAuthenticationPolicy))
+        self.assertEqual(len(policy._policies), 2)
+        self.assertEqual(policy.authenticated_userid(self.request),
+                         "test1")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test1"])
+
+    def test_directive_on_includeme_with_factory(self):
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.add_selectauth_policy(policy_factory)
+        self.config.commit()
+
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, SelectableAuthenticationPolicy))
+        self.assertEqual(len(policy._policies), 1)
+        self.assertEqual(policy.authenticated_userid(self.request),
+                         "test3")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
+
+    def test_set_selectable_authentication_policy_with_directive(self):
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        set_selectable_authentication_policy(self.config)
+        self.config.add_selectauth_policy(policy_factory)
+        self.config.commit()
+
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, SelectableAuthenticationPolicy))
+        self.assertEqual(len(policy._policies), 1)
+        self.assertEqual(policy.authenticated_userid(self.request),
+                         "test3")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
+
+    def test_set_selectable_authentication_policy(self):
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        set_selectable_authentication_policy(self.config, [TestAuthnPolicy3()])
+        self.config.commit()
+
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, SelectableAuthenticationPolicy))
+        self.assertEqual(len(policy._policies), 1)
+        self.assertEqual(policy.authenticated_userid(self.request),
+                         "test3")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
+
+    def test_directive_mixed_settings(self):
         self.config.add_settings({
-            "selectauth.authorization_policy": "pyramid_selectauth.tests."
-            "TestAuthzPolicyCustom"
+            "selectauth.policies":
+                "pyramid_selectauth.tests.policy_factory "
         })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.add_selectauth_policy(TestAuthnPolicy1())
+        self.config.add_selectauth_policy(TestAuthnPolicy2())
+        self.config.commit()
+
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, SelectableAuthenticationPolicy))
+        self.assertEqual(len(policy._policies), 3)
+        self.assertEqual(policy.authenticated_userid(self.request),
+                         "test3")
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
+
+    def test_wrong_config(self):
+        self.config.add_settings({
+            "selectauth.policies": TestAuthnPolicy3()
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        with self.assertRaises(ConfigurationError):
+            self.config.include("pyramid_selectauth")
+
+    def test_includeme_custom_class(self):
+        self.config.add_settings({
+            "selectauth.policy_class": "pyramid_selectauth.tests."
+            "CustomPolicy"
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
         self.config.include("pyramid_selectauth")
         self.config.commit()
-        policy = self.config.registry.getUtility(IAuthorizationPolicy)
-        self.assertTrue(isinstance(policy, TestAuthzPolicyCustom))
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        self.assertTrue(isinstance(policy, CustomPolicy))
 
     def test_includeme_by_module(self):
         self.config.add_settings({
-            "selectauth.policies": "pyramid_selectauth.tests.testincludeme1 "
-                                   "pyramid_selectauth.tests.testincludeme2 "
-                                   "pyramid_selectauth.tests.testincludemenull"
-                                   " pyramid_selectauth.tests.testincludeme3"
+            "selectauth.policies":
+                "pyramid_selectauth.tests.policy_factory "
+                "pyramid_selectauth.tests.TestAuthnPolicy2"
         })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
         self.config.include("pyramid_selectauth")
         self.config.commit()
         policy = self.config.registry.getUtility(IAuthenticationPolicy)
-        self.assertEquals(len(policy._policies), 3)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-        # Check that they stack correctly.
-        self.assertEquals(policy.unauthenticated_userid(self.request), "test1")
-        self.assertEquals(policy.authenticated_userid(self.request), "test1")
+        self.assertEqual(len(policy._policies), 2)
+        self.assertEqual(policy.unauthenticated_userid(self.request), "test3")
+        self.assertEqual(policy.authenticated_userid(self.request), "test3")
         # Check that the forbidden view gets invoked.
         self.config.add_route("index", path="/")
         self.config.add_view(raiseforbidden, route_name="index")
@@ -272,86 +323,92 @@ class SelectAuthPolicyTests(unittest.TestCase):
         def start_response(*args):
             pass
 
-        result = b"".join(app(environ, start_response))
-        self.assertEquals(result, b'"FORBIDDEN ONE"')
+        with self.assertRaises(Forbidden):
+            app(environ, start_response)
 
-    def test_includeme_by_callable(self):
+    def test_includeme_with_list(self):
         self.config.add_settings({
             "selectauth.policies":
-                "pyramid_selectauth.tests.testincludeme1 policy1 policy2",
-            "selectauth.policy.policy1.use":
-                "pyramid_selectauth.tests.TestAuthnPolicy2",
-            "selectauth.policy.policy1.foo":
-                "bar",
-            "selectauth.policy.policy2.use":
-                "pyramid_selectauth.tests.TestAuthnPolicy3"
+                ["pyramid_selectauth.tests.TestAuthnPolicy2",
+                 "pyramid_selectauth.tests.TestAuthnPolicy3"]
         })
-        self.config.include("pyramid_selectauth")
-        self.config.commit()
-        policy = self.config.registry.getUtility(IAuthenticationPolicy)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-        self.assertEquals(len(policy._policies), 3)
-        self.assertEquals(policy._policies[1].foo, "bar")
-        # Check that they stack correctly.
-        self.assertEquals(policy.unauthenticated_userid(self.request), "test1")
-        self.assertEquals(policy.authenticated_userid(self.request), "test1")
-        # Check that the forbidden view gets invoked.
-        self.config.add_route("index", path="/")
-        self.config.add_view(raiseforbidden, route_name="index")
-        app = self.config.make_wsgi_app()
-        environ = {"PATH_INFO": "/", "REQUEST_METHOD": "GET"}
-
-        def start_response(*args):
-            pass
-
-        result = b"".join(app(environ, start_response))
-        self.assertEquals(result, b'"FORBIDDEN ONE"')
-
-    def test_includeme_with_unconfigured_policy(self):
-        self.config.add_settings({
-            "selectauth.policies":
-                "pyramid_selectauth.tests.testincludeme1 policy1 policy2",
-            "selectauth.policy.policy1.use":
-                "pyramid_selectauth.tests.TestAuthnPolicy2",
-            "selectauth.policy.policy1.foo":
-                "bar",
-        })
-        self.assertRaises(ValueError, self.config.include,
-                          "pyramid_selectauth")
-
-    def test_get_policies(self):
-        self.config.add_settings({
-            "selectauth.policies":
-                "pyramid_selectauth.tests.testincludeme1 policy1 policy2",
-            "selectauth.policy.policy1.use":
-                "pyramid_selectauth.tests.TestAuthnPolicy2",
-            "selectauth.policy.policy2.use":
-                "pyramid_selectauth.tests.TestAuthnPolicy3"
-        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
         self.config.include("pyramid_selectauth")
         self.config.commit()
         policy = self.config.registry.getUtility(IAuthenticationPolicy)
         policies = policy.get_policies()
-        expected_result = [TestAuthnPolicy1, TestAuthnPolicy2,
-                           TestAuthnPolicy3]
+        expected_result = [TestAuthnPolicy2, TestAuthnPolicy3]
         for (obtained, expected) in zip(policies, expected_result):
-            self.assertEquals(obtained, expected)
+            self.assertEqual(obtained, expected)
+
+    def test_includeme_with_modules(self):
+        self.config.add_settings({
+            "selectauth.policies":
+                [TestAuthnPolicy2,
+                 TestAuthnPolicy3]
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.commit()
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        policies = policy.get_policies()
+        expected_result = [TestAuthnPolicy2, TestAuthnPolicy3]
+        for (obtained, expected) in zip(policies, expected_result):
+            self.assertEqual(obtained, expected)
+
+    def test_includeme_with_policies(self):
+        self.config.add_settings({
+            "selectauth.policies":
+                [TestAuthnPolicy2(),
+                 TestAuthnPolicy3()]
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.commit()
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        policies = policy.get_policies()
+        expected_result = [TestAuthnPolicy2, TestAuthnPolicy3]
+        for (obtained, expected) in zip(policies, expected_result):
+            self.assertEqual(obtained, expected)
+
+    def test_includeme_with_factories(self):
+        self.config.add_settings({
+            "selectauth.policies":
+                [TestAuthnPolicy2(),
+                 policy_factory]
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.commit()
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        policies = policy.get_policies()
+        expected_result = [TestAuthnPolicy2, TestAuthnPolicy3]
+        for (obtained, expected) in zip(policies, expected_result):
+            self.assertEqual(obtained, expected)
+
+    def test_get_policies(self):
+        self.config.add_settings({
+            "selectauth.policies":
+                "pyramid_selectauth.tests.TestAuthnPolicy2 "
+                "pyramid_selectauth.tests.TestAuthnPolicy3",
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        self.config.include("pyramid_selectauth")
+        self.config.commit()
+        policy = self.config.registry.getUtility(IAuthenticationPolicy)
+        policies = policy.get_policies()
+        expected_result = [TestAuthnPolicy2, TestAuthnPolicy3]
+        for (obtained, expected) in zip(policies, expected_result):
+            self.assertEqual(obtained, expected)
 
     def test_select_first_policy_with_unauthenticated_userid(self):
         policies = [TestAuthnPolicyNull(), TestAuthnPolicy3()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-
-        self.assertEquals(sorted(policy.effective_principals(self.request)),
-                          [Authenticated, Everyone, "test3", "test4"])
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Authenticated, Everyone, "test3", "test4"])
 
     def test_no_good_policy(self):
         policies = [TestAuthnPolicyNull(), TestAuthnPolicyUnauthOnly()]
-        policy = SelectableAuthenticationPolicy(policies)
-        self.request.set_property(policy.select_policy,
-                                  'selected_policy', reify=True)
-
-        self.assertEquals(sorted(policy.effective_principals(self.request)),
-                          [Everyone])
+        policy = create_selectable_authentication_policy(self.config, policies)
+        self.assertEqual(sorted(policy.effective_principals(self.request)),
+                         [Everyone])
