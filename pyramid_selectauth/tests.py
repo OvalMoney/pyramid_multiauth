@@ -301,6 +301,15 @@ class SelectAuthPolicyTests(unittest.TestCase):
         policy = self.config.registry.getUtility(IAuthenticationPolicy)
         self.assertTrue(isinstance(policy, CustomPolicy))
 
+    def test_includeme_custom_class_doesnt_extend_selectauth(self):
+        self.config.add_settings({
+            "selectauth.policy_class": "pyramid_selectauth.tests."
+            "TestAuthnPolicyNull"
+        })
+        self.config.set_authorization_policy(ACLAuthorizationPolicy)
+        with self.assertRaises(ConfigurationError):
+            self.config.include("pyramid_selectauth")
+
     def test_includeme_by_module(self):
         self.config.add_settings({
             "selectauth.policies":

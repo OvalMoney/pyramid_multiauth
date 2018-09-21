@@ -1,14 +1,15 @@
 from pyramid.exceptions import ConfigurationError
 from pyramid.interfaces import IAuthenticationPolicy
-from .policy import SelectableAuthenticationPolicy
+from .policy import SelectableAuthenticationPolicy, ISelectableAuthPolicy
 
 __all__ = ['SelectableAuthenticationPolicy',
+           'ISelectableAuthPolicy',
            'create_selectable_authentication_policy',
            'set_selectable_authentication_policy']
 
 __ver_major__ = 0
 __ver_minor__ = 0
-__ver_patch__ = 3
+__ver_patch__ = 4
 __ver_sub__ = ""
 __ver_tuple__ = (__ver_major__, __ver_minor__, __ver_patch__, __ver_sub__)
 __version__ = "%d.%d.%d%s" % __ver_tuple__
@@ -44,6 +45,10 @@ def create_selectable_authentication_policy(config, policies=None,
                                             _class=DEFAULT_CLASS):
     if not policies:
         policies = []
+    if not ISelectableAuthPolicy.implementedBy(_class):
+        raise ConfigurationError(
+            "The selectauth policy class should extend "
+            "pyramid_selectauth.SelectableAuthenticationPolicy")
     _policy = _class(policies)
     config.add_request_method(_policy.select_policy, 'sa_selected_policy',
                               reify=True)

@@ -5,3 +5,4 @@ List of contributors:
 * Laurence Rowe <laurence@lrowe.co.uk>
 * Mathieu Leplatre <mathieu@mozilla.com>
 * Rémy Hubscher <natim@mozilla.com>
+* Walter Danilo Galante <walter.galante@ovalmoney.com>

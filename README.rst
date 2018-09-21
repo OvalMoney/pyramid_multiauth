@@ -24,14 +24,11 @@ based on the specific request.  Simply pass it a list of policies that
 should be tried in order, and register the 'selected_policy' request method that
 will select and cache the correct policy to use::
 
-
     policies = [
         IPAuthenticationPolicy("127.0.*.*", principals=["local"])
         IPAuthenticationPolicy("192.168.*.*", principals=["trusted"])
     ]
-    authn_policy = SelectableAuthenticationPolicy(policies)
-    config.add_request_method('selected_policy', authn_policy.select_policy, reify=True)
-    config.set_authentication_policy(authn_policy)
+    set_selectable_authentication_policy(config, policies)
 
 This example uses the pyramid_ipauth module to assign effective principals
 based on originating IP address of the request.  It combines two such
@@ -39,9 +36,45 @@ policies so that requests originating from "127.0.*.*" will have principal
 "local" while requests originating from "192.168.*.*" will have principal
 "trusted".
 
-The default selection function will call *unauthenticated_userid* on the provided
+You can use the *create_selectable_authentication_policy* factory to just create the
+*SelectableAuthenticationPolicy* instance without setting it::
+
+    policies = [
+        IPAuthenticationPolicy("127.0.*.*", principals=["local"])
+        IPAuthenticationPolicy("192.168.*.*", principals=["trusted"])
+    ]
+    policy = create_selectable_authentication_policy(config, policies)
+    policy.add_policy(IPAuthenticationPolicy("10.0.*.*", principals=["not-so-trusted"]))
+    config.set_authentication_policy(policy)
+
+You can also just use *config.include()* to include the policy, and then add the subpolicies
+with the registered *add_selectauth_policy* directive on config::
+
+    config.include('pyramid_selectauth')
+    config.add_selectauth_policy(IPAuthenticationPolicy("127.0.*.*", principals=["local"]))
+    config.add_selectauth_policy(IPAuthenticationPolicy("192.168.*.*", principals=["trusted"]))
+
+Policy selection method
+=========================
+
+The default selection method will call *unauthenticated_userid* on the provided
 policies in order, and select the first one that does not return `None`.
 
+You can change the selection method by extending the *SelectableAuthenticationPolicy* and
+overriding the *select_policy* method with your logic to select the correct policy for the
+current request, and then specifying your class in the factories::
+
+    class MyPolicy(SelectableAuthenticationPolicy):
+        def select_policy(self, request):
+            return self._policies[0]  # Always uses the first policy (very useful!)
+
+
+    policies = [
+        IPAuthenticationPolicy("127.0.*.*", principals=["local"])
+        IPAuthenticationPolicy("192.168.*.*", principals=["trusted"])
+    ]
+    policy = create_selectable_authentication_policy(config, policies, _class=MyPolicy)
+    config.set_authentication_policy(policy)
 
 Deployment Settings
 ===================
@@ -52,37 +85,13 @@ paste deployment settings.  Consider the following example::
     [app:pyramidapp]
     use = egg:mypyramidapp
 
-    selectauth.policies = ipauth1 ipauth2 pyramid_browserid
+    selectauth.policy_class = mypyramidapp.policies.MySelectAuthPolicy
+    selectauth.policies = mypyramidapp.policies.ipauthpolicyfactory mypyramidapp.policies.mypolicyfactory
 
-    selectauth.policy.ipauth1.use = pyramid_ipauth.IPAuthentictionPolicy
-    selectauth.policy.ipauth1.ipaddrs = 127.0.*.*
-    selectauth.policy.ipauth1.principals = local
-
-    selectauth.policy.ipauth2.use = pyramid_ipauth.IPAuthentictionPolicy
-    selectauth.policy.ipauth2.ipaddrs = 192.168.*.*
-    selectauth.policy.ipauth2.principals = trusted
 
 To configure authentication from these settings, simply include the multiauth
 module into your configurator::
 
     config.include("pyramid_selectauth")
 
-In this example you would get a SelectableAuthenticationPolicy with three stacked
-auth policies.  The first two, ipauth1 and ipauth2, are defined as the name of
-of a callable along with a set of keyword arguments.  The third is defined as
-the name of a module, pyramid_browserid, which will be procecesed via the
-standard config.include() mechanism.
 
-The end result would be a system that authenticates users via BrowserID, and
-assigns additional principal identifiers based on the originating IP address
-of the request.
-
-If necessary, the *group finder function* and the *authorization policy* can
-also be specified from configuration::
-
-    [app:pyramidapp]
-    use = egg:mypyramidapp
-
-    selectauth.authorization_policy = mypyramidapp.acl.Custom
-
-    ...

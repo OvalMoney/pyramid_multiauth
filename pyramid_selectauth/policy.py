@@ -12,28 +12,42 @@ from pyramid.interfaces import IAuthenticationPolicy
 from pyramid.security import Everyone
 
 
-@implementer(IAuthenticationPolicy)
+class ISelectableAuthPolicy(IAuthenticationPolicy):
+    def select_policy(request):
+        """Method that should select the correct policy
+        to use based on the current request
+        """
+
+
+@implementer(ISelectableAuthPolicy)
 class SelectableAuthenticationPolicy(object):
-    """
+    """Default selectable authentication policy that selects
+    the authentication policy to use for the current request
+    based on the 'unauthenticated_userid' method of the subpolicies.
     """
     def __init__(self, policies):
         self._policies = policies
-        self._select_policy_property = None
 
     def select_policy(self, request):
-        """Efficiently retrieves the first policy which property
+        """Efficiently retrieves the first policy which method
         'unauthenticated_userid' returns not None, or returns None if
-        no one does.
+        no one does. Iterates through the policies in the order they are
+        provided in the class initializer.
         """
         return next(filter(
             operator.methodcaller('unauthenticated_userid', request),
             self._policies), None)
 
     def select_policy_property(self, request):
-        if self._select_policy_property:
-            return self._select_policy_property
+        """Helper that uses the registered 'sa_selected_policy' property
+        of the request or backs down on the policy's 'select_policy' method
+        in case the property wasn't registered on the request.
+        The registration of the 'sa_selected_policy' property is done when
+        using the 'create_selectable_authentication_policy' or the
+        'set_selectable_authentication_policy' factories.
+        """
         if hasattr(request, 'sa_selected_policy'):
-            self._select_policy_property = request.sa_selected_policy
+            return request.sa_selected_policy
         return self.select_policy(request)
 
     def add_policy(self, config, policy):
@@ -44,21 +58,21 @@ class SelectableAuthenticationPolicy(object):
             self._policies.append(factory_or_policy)
 
     def authenticated_userid(self, request):
-        """
+        """Returns the `authenticated_userid` result from the selected policy
         """
         policy = self.select_policy_property(request)
         if policy:
             return policy.authenticated_userid(request)
 
     def unauthenticated_userid(self, request):
-        """
+        """Returns the `unauthenticated_userid` result from the selected policy
         """
         policy = self.select_policy_property(request)
         if policy:
             return policy.unauthenticated_userid(request)
 
     def effective_principals(self, request):
-        """
+        """Returns the `effective_principals` result from the selected policy
         """
         principals = {Everyone}
         policy = self.select_policy_property(request)
@@ -69,7 +83,7 @@ class SelectableAuthenticationPolicy(object):
         return list(principals)
 
     def remember(self, request, principal, **kw):
-        """
+        """Returns the `remember` result from the selected policy
         """
         headers = []
         policy = self.select_policy_property(request)
@@ -78,7 +92,7 @@ class SelectableAuthenticationPolicy(object):
         return headers
 
     def forget(self, request):
-        """
+        """Returns the `forget` result from the selected policy
         """
         headers = []
         policy = self.select_policy_property(request)
@@ -87,6 +101,6 @@ class SelectableAuthenticationPolicy(object):
         return headers
 
     def get_policies(self):
-        """
+        """Returns the registered policies classes (not the instances)
         """
         return [p.__class__ for p in self._policies]
