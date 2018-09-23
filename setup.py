@@ -12,7 +12,7 @@ with open(os.path.join(here, 'CHANGES.txt')) as f:
 requires = ['pyramid']
 
 setup(name='pyramid_selectauth',
-      version='0.0.4',
+      version='1.0.0',
       description='pyramid_selectauth',
       long_description=README + '\n\n' + CHANGES,
       classifiers=[

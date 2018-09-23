@@ -57,48 +57,37 @@ class SelectableAuthenticationPolicy(object):
         else:
             self._policies.append(factory_or_policy)
 
+    def _proxy_method(self, name, request, *args, **kw):
+        policy = self.select_policy_property(request)
+        if policy:
+            return getattr(policy, name)(request, *args, **kw)
+
     def authenticated_userid(self, request):
         """Returns the `authenticated_userid` result from the selected policy
         """
-        policy = self.select_policy_property(request)
-        if policy:
-            return policy.authenticated_userid(request)
+        return self._proxy_method('authenticated_userid', request)
 
     def unauthenticated_userid(self, request):
         """Returns the `unauthenticated_userid` result from the selected policy
         """
-        policy = self.select_policy_property(request)
-        if policy:
-            return policy.unauthenticated_userid(request)
+        return self._proxy_method('unauthenticated_userid', request)
 
     def effective_principals(self, request):
         """Returns the `effective_principals` result from the selected policy
         """
         principals = {Everyone}
-        policy = self.select_policy_property(request)
-        if policy:
-            userid = policy.authenticated_userid(request)
-            if userid:
-                principals.update(policy.effective_principals(request))
+        principals.update(self._proxy_method('effective_principals', request) or set())
         return list(principals)
 
     def remember(self, request, principal, **kw):
         """Returns the `remember` result from the selected policy
         """
-        headers = []
-        policy = self.select_policy_property(request)
-        if policy:
-            headers.extend(policy.remember(request, principal, **kw))
-        return headers
+        return self._proxy_method('remember', request, principal, **kw) or []
 
     def forget(self, request):
         """Returns the `forget` result from the selected policy
         """
-        headers = []
-        policy = self.select_policy_property(request)
-        if policy:
-            headers.extend(policy.forget(request))
-        return headers
+        return self._proxy_method('forget', request) or []
 
     def get_policies(self):
         """Returns the registered policies classes (not the instances)
