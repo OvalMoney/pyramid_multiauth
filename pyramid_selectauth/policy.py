@@ -76,7 +76,9 @@ class SelectableAuthenticationPolicy(object):
         """Returns the `effective_principals` result from the selected policy
         """
         principals = {Everyone}
-        principals.update(self._proxy_method('effective_principals', request) or set())
+        principals.update(
+            self._proxy_method('effective_principals', request) or set()
+        )
         return list(principals)
 
     def remember(self, request, principal, **kw):
