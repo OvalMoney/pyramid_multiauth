@@ -5,6 +5,7 @@
 Pyramid authn policy that ties together multiple backends.
 """
 import operator
+import functools
 
 from zope.interface import implementer
 
@@ -51,45 +52,61 @@ class SelectableAuthenticationPolicy(object):
         return self.select_policy(request)
 
     def add_policy(self, config, policy):
+        """Appends a new policy to the list of policies
+        """
         factory_or_policy = config.maybe_dotted(policy)
         if callable(factory_or_policy):
             self._policies.append(factory_or_policy(config))
         else:
             self._policies.append(factory_or_policy)
 
-    def _proxy_method(self, name, request, *args, **kw):
-        policy = self.select_policy_property(request)
-        if policy:
-            return getattr(policy, name)(request, *args, **kw)
+    def proxy_method(method):
+        """Decorator that automagically fetches the result of the
+        selected policy method and passes it through to the selectauth policy
+        to be returned"""
+        @functools.wraps(method)
+        def _proxied(self, request, *args, **kw):
+            policy = self.select_policy_property(request)
+            proxied_result = None
+            if policy:
+                proxied_method = getattr(policy, method.__name__)
+                proxied_result = proxied_method(request, *args, **kw)
+            return method(self, request, proxied_result, *args, **kw)
+        return _proxied
 
-    def authenticated_userid(self, request):
+    @proxy_method
+    def authenticated_userid(self, request, proxied_result):
         """Returns the `authenticated_userid` result from the selected policy
         """
-        return self._proxy_method('authenticated_userid', request)
+        return proxied_result
 
-    def unauthenticated_userid(self, request):
+    @proxy_method
+    def unauthenticated_userid(self, request, proxied_result):
         """Returns the `unauthenticated_userid` result from the selected policy
         """
-        return self._proxy_method('unauthenticated_userid', request)
+        return proxied_result
 
-    def effective_principals(self, request):
+    @proxy_method
+    def effective_principals(self, request, proxied_result):
         """Returns the `effective_principals` result from the selected policy
         """
         principals = {Everyone}
         principals.update(
-            self._proxy_method('effective_principals', request) or set()
+            proxied_result or set()
         )
         return list(principals)
 
-    def remember(self, request, principal, **kw):
+    @proxy_method
+    def remember(self, request, proxied_result, principal, **kw):
         """Returns the `remember` result from the selected policy
         """
-        return self._proxy_method('remember', request, principal, **kw) or []
+        return proxied_result or []
 
-    def forget(self, request):
+    @proxy_method
+    def forget(self, request, proxied_result):
         """Returns the `forget` result from the selected policy
         """
-        return self._proxy_method('forget', request) or []
+        return proxied_result or []
 
     def get_policies(self):
         """Returns the registered policies classes (not the instances)
